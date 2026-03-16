@@ -1,0 +1,363 @@
+"""
+Speed Calculation Module - Homography and Tripwire Method
+
+Extracted from car_and_road_recognition_model.ipynb and 04_speed_estimation.ipynb
+"""
+
+import logging
+from collections import defaultdict
+from typing import List, Optional, Tuple
+
+import cv2
+import numpy as np
+from PIL import Image
+
+logger = logging.getLogger(__name__)
+
+
+def get_homography(
+    original_image_pil: Image.Image,
+    model_mask_640: np.ndarray
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """
+    Calculate homography matrix to transform image to bird's-eye view.
+
+    Args:
+        original_image_pil: Original image as PIL Image
+        model_mask_640: Lane segmentation mask (640x640)
+
+    Returns:
+        Tuple of (warped_image, homography_matrix) or (None, None) if calculation fails
+    """
+    orig_w, orig_h = original_image_pil.size
+    full_mask = cv2.resize(
+        model_mask_640, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST
+    )
+
+    # Find all pixels of the mask
+    all_y, all_x = np.where(full_mask > 0.5)
+
+    if len(all_x) == 0 or len(all_y) == 0:
+        return None, None
+
+    # Calculate the range of x and y axis
+    delta_x = np.max(all_x) - np.min(all_x)
+    delta_y = np.max(all_y) - np.min(all_y)
+
+    # If delta_x is significantly larger, we treat it as horizontal
+    if delta_x > 1.2 * delta_y:
+        # Horizontal roads, we take dots on the left and right side
+        offset_x = int(delta_x * 0.1)
+        left_x = np.min(all_x) + offset_x
+        right_x = np.max(all_x) - offset_x
+
+        # Edges of the road are on the top and bottom of that x
+        left_indices = np.where(full_mask[:, left_x] > 0.5)[0]
+        right_indices = np.where(full_mask[:, right_x] > 0.5)[0]
+
+        if len(left_indices) == 0 or len(right_indices) == 0:
+            return None, None
+
+        # Ordering points for 400x800 vertical output
+        src_pts = np.float32([
+            [left_x, left_indices[0]],
+            [right_x, right_indices[0]],
+            [right_x, right_indices[-1]],
+            [left_x, left_indices[-1]],
+        ])
+    else:
+        # Vertical road
+        top_y = np.min(all_y) + 30
+        bottom_y = np.max(all_y) - 20
+        top_indices = np.where(full_mask[top_y, :] > 0.5)[0]
+        bottom_indices = np.where(full_mask[bottom_y, :] > 0.5)[0]
+
+        if len(top_indices) == 0 or len(bottom_indices) == 0:
+            return None, None
+
+        src_pts = np.float32([
+            [top_indices[0], top_y],
+            [top_indices[-1], top_y],
+            [bottom_indices[-1], bottom_y],
+            [bottom_indices[0], bottom_y],
+        ])
+
+    # Transform to bird's eye view
+    dst_pts = np.float32([[0, 0], [400, 0], [400, 800], [0, 800]])
+    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    warped = cv2.warpPerspective(np.array(original_image_pil), M, (400, 800))
+
+    return warped, M
+
+
+def extract_line_segments(
+    warped_img: np.ndarray
+) -> Tuple[Optional[int], Optional[int], int]:
+    """
+    Extract line segments from warped bird's-eye view image.
+
+    This function analyzes dashed lane markings to find line and gap measurements.
+
+    Args:
+        warped_img: Warped bird's-eye view image (RGB)
+
+    Returns:
+        Tuple of (p_line, p_gap, best_x) where:
+        - p_line: Length of dashed line in pixels
+        - p_gap: Length of gap between dashes in pixels
+        - best_x: X coordinate where measurement was taken
+    """
+    # Grayscale the image
+    gray = cv2.cvtColor(warped_img, cv2.COLOR_RGB2GRAY)
+    # Otsu threshold for extracting lines
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    height, width = thresh.shape
+
+    # Find the best x axis by looking for dashed lines
+    best_x = width // 2
+    max_score = 0
+    best_segments = []
+
+    # Scan from left to right, staying away from sidewalk edges
+    for x in range(50, width - 50, 10):
+        # Create the tunnel around current x
+        sample_width = 5
+        tunnel = thresh[:, max(0, x - sample_width): min(width, x + sample_width)]
+
+        # Average of the tunnel to boolean
+        line_map = np.mean(tunnel, axis=1) > 127
+
+        # Group into segments
+        segments = []
+        if len(line_map) > 0:
+            count = 1
+            for i in range(1, len(line_map)):
+                if line_map[i] == line_map[i - 1]:
+                    count += 1
+                else:
+                    segments.append((line_map[i - 1], count))
+                    count = 1
+            segments.append((line_map[-1], count))
+
+            # Score to avoid tram rails or long curbs
+            transitions = len(segments)
+            score = transitions
+
+            for is_white, length in segments:
+                # If the white line is too long (>40% of height), it's probably a rail
+                if is_white and length > (height * 0.4):
+                    score = 0
+                    break
+
+            # Take the x with best score
+            if score > max_score:
+                max_score = score
+                best_x = x
+                best_segments = segments
+
+    if not best_segments:
+        return None, None, best_x
+
+    # Find the first valid couple
+    p_line, p_gap = None, None
+    for i in range(len(best_segments) - 1):
+        # Use a safe range for lines (30px to 300px)
+        if best_segments[i][0] is True and 30 < best_segments[i][1] < 300:
+            if best_segments[i + 1][0] is False and 20 < best_segments[i + 1][1] < 400:
+                p_line = best_segments[i][1]
+                p_gap = best_segments[i + 1][1]
+                break
+
+    return p_line, p_gap, best_x
+
+
+def calculate_meters_per_pixel(
+    p_line: Optional[int],
+    p_gap: Optional[int],
+    verbose: bool = False
+) -> Optional[float]:
+    """
+    Calculate scale factor (meters per pixel) from dashed lane markings.
+
+    Uses standard lane marking dimensions:
+    - City roads: 3m line, 1m gap
+    - Open roads: 3m line, 3m gap
+
+    Args:
+        p_line: Length of dashed line in pixels
+        p_gap: Length of gap between dashes in pixels
+        verbose: Whether to log detailed information
+
+    Returns:
+        Scale factor in meters per pixel, or None if calculation fails
+    """
+    if p_line is None or p_gap is None:
+        if verbose:
+            logger.warning("System did not detect a clear line-gap pair.")
+        return None
+
+    ratio = p_line / p_gap
+
+    # If the line is a lot bigger than the gap, we say it's 3m line and 1m gap
+    if ratio >= 2.0:
+        road_type = "City road (3m line, 1m gap)"
+        meters_per_pixel = 3.0 / p_line
+    else:
+        road_type = "Open road (3m line, 3m gap)"
+        meters_per_pixel = 3.0 / p_line
+
+    # Safety check
+    if meters_per_pixel > 0.5:
+        if verbose:
+            logger.warning("Warning: Scale factor is suspiciously large!")
+        return None
+
+    if verbose:
+        logger.info(f"Road type: {road_type}")
+        logger.info(f"Pixels: Line={p_line}px, Gap={p_gap}px (Ratio: {ratio:.2f})")
+        logger.info(f"Final scale: {meters_per_pixel:.5f} meters per pixel")
+
+    return meters_per_pixel
+
+
+class SpeedCalculator:
+    """
+    Calculate vehicle speeds using tripwire method.
+
+    Tracks vehicles crossing two virtual tripwires in bird's-eye view and
+    calculates speed based on distance and time between crossings.
+    """
+
+    def __init__(
+        self,
+        tripwire_y1: int = 200,
+        tripwire_y2: int = 600,
+        fps: float = 30.0,
+        min_valid_speed: float = 20.0,
+        max_valid_speed: float = 150.0,
+    ):
+        """
+        Initialize speed calculator.
+
+        Args:
+            tripwire_y1: First tripwire y-coordinate (in bird's-eye view)
+            tripwire_y2: Second tripwire y-coordinate (in bird's-eye view)
+            fps: Video frames per second
+            min_valid_speed: Minimum valid speed in km/h
+            max_valid_speed: Maximum valid speed in km/h
+        """
+        self.tripwire_y1 = tripwire_y1
+        self.tripwire_y2 = tripwire_y2
+        self.fps = fps
+        self.min_valid_speed = min_valid_speed
+        self.max_valid_speed = max_valid_speed
+
+        # Track crossings: {track_id: {'y1': frame, 'y2': frame}}
+        self.crossings = defaultdict(dict)
+
+        # Calculated speeds: {track_id: speed_kmh}
+        self.speeds = {}
+
+        self.current_frame = 0
+
+    def update(
+        self,
+        tracked_objects: List[List[float]],
+        homography_matrix: Optional[np.ndarray],
+        meters_per_pixel: Optional[float]
+    ) -> dict:
+        """
+        Update speed calculations with tracked objects.
+
+        Args:
+            tracked_objects: List of [x1, y1, x2, y2, track_id, class_id]
+            homography_matrix: Homography matrix for bird's-eye transform
+            meters_per_pixel: Scale factor (meters per pixel in bird's-eye view)
+
+        Returns:
+            Dictionary of {track_id: speed_kmh}
+        """
+        if homography_matrix is None or meters_per_pixel is None:
+            return self.speeds
+
+        self.current_frame += 1
+
+        for obj in tracked_objects:
+            x1, y1, x2, y2, track_id, class_id = obj
+
+            # Calculate center of bounding box
+            center_x = (x1 + x2) / 2
+            center_y = (y1 + y2) / 2
+
+            # Transform center to bird's-eye view
+            point = np.array([[[center_x, center_y]]], dtype=np.float32)
+            transformed = cv2.perspectiveTransform(point, homography_matrix)
+            bev_x, bev_y = transformed[0][0]
+
+            # Check tripwire crossings
+            if "y1" not in self.crossings[track_id]:
+                # Check if crossing first tripwire
+                if abs(bev_y - self.tripwire_y1) < 20:  # Within 20px of tripwire
+                    self.crossings[track_id]["y1"] = self.current_frame
+
+            elif "y2" not in self.crossings[track_id]:
+                # Check if crossing second tripwire
+                if abs(bev_y - self.tripwire_y2) < 20:  # Within 20px of tripwire
+                    self.crossings[track_id]["y2"] = self.current_frame
+
+                    # Calculate speed
+                    frame_diff = (
+                        self.crossings[track_id]["y2"] - self.crossings[track_id]["y1"]
+                    )
+                    if frame_diff > 0:
+                        # Distance in pixels
+                        pixel_distance = abs(self.tripwire_y2 - self.tripwire_y1)
+
+                        # Distance in meters
+                        distance_meters = pixel_distance * meters_per_pixel
+
+                        # Time in seconds
+                        time_seconds = frame_diff / self.fps
+
+                        # Speed in m/s
+                        speed_ms = distance_meters / time_seconds
+
+                        # Convert to km/h
+                        speed_kmh = speed_ms * 3.6
+
+                        # Sanity check
+                        if self.min_valid_speed <= speed_kmh <= self.max_valid_speed:
+                            self.speeds[track_id] = speed_kmh
+
+        return self.speeds
+
+    def get_speed(self, track_id: int) -> Optional[float]:
+        """
+        Get speed for a specific track ID.
+
+        Args:
+            track_id: Vehicle track ID
+
+        Returns:
+            Speed in km/h, or None if not calculated
+        """
+        return self.speeds.get(track_id, None)
+
+    def get_results(self) -> List[dict]:
+        """
+        Get all speed results.
+
+        Returns:
+            List of dictionaries with track_id and speed_kmh
+        """
+        return [
+            {"track_id": int(track_id), "speed_kmh": float(speed)}
+            for track_id, speed in self.speeds.items()
+        ]
+
+    def reset(self):
+        """Reset speed calculator state."""
+        self.crossings = defaultdict(dict)
+        self.speeds = {}
+        self.current_frame = 0

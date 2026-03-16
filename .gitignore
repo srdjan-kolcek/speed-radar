@@ -1,0 +1,38 @@
+# Datasets
+dataset/
+yolo_dataset/
+clrnet_dataset/
+
+# Model weights
+singi-ml/
+*.pt
+*.pth
+*.onnx
+*.h5
+
+# Node
+node_modules/
+mobile/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Embedded repos (track separately)
+CLRNet/
+
+
+.claude
