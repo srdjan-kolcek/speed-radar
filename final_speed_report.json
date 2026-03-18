@@ -1,0 +1,32 @@
+[
+  {
+    "track_id": 1,
+    "average_speed": 13.3,
+    "max_speed": 13.6,
+    "image_filename": "car_1.jpg"
+  },
+  {
+    "track_id": 2,
+    "average_speed": 12.0,
+    "max_speed": 13.1,
+    "image_filename": "car_2.jpg"
+  },
+  {
+    "track_id": 11,
+    "average_speed": 9.1,
+    "max_speed": 9.8,
+    "image_filename": "car_11.jpg"
+  },
+  {
+    "track_id": 14,
+    "average_speed": 11.6,
+    "max_speed": 11.6,
+    "image_filename": "car_14.jpg"
+  },
+  {
+    "track_id": 19,
+    "average_speed": 12.2,
+    "max_speed": 13.2,
+    "image_filename": "car_19.jpg"
+  }
+]
