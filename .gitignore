@@ -34,5 +34,15 @@ nul
 # Embedded repos (track separately)
 CLRNet/
 
+/runs
+
+/models/yolo_training/vehicle_detection/weights/
+/models/yolo_training/vehicle_detection/*.jpg
+/models/yolo_training/vehicle_detection/*.png
+
+#keep the matrix and best weight
+!/models/yolo_training/vehicle_detection/confusion_matrix_normalized.png
+!/models/weights/lane_detector_best.pt
+!/models/weights/yolov9_vehicle_detection_best.pt
 
 .claude

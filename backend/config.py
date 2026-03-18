@@ -8,7 +8,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 MODELS_DIR = BASE_DIR / "models" / "weights"
 UPLOADS_DIR = BASE_DIR / "backend" / "uploads"
-SAMPLE_VIDEOS_DIR = BASE_DIR / "sample_videos"
+# SAMPLE_VIDEOS_DIR = BASE_DIR / "sample_videos"
 
 # Model paths
 VEHICLE_MODEL_PATH = MODELS_DIR / "yolov9_vehicle_detection_best.pt"

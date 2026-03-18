@@ -21,7 +21,6 @@ from .config import (
     API_VERSION,
     LANE_MODEL_PATH,
     MAX_VIDEO_SIZE_MB,
-    SAMPLE_VIDEOS_DIR,
     VEHICLE_MODEL_PATH,
 )
 from .models import AnalysisResponse, HealthResponse, SampleRequest, SpeedResult
@@ -52,6 +51,9 @@ app.add_middleware(
 
 # Global video processor instance
 video_processor: Optional[VideoProcessor] = None
+
+# Sample video name
+SAMPLE_VIDEO_NAME = "VID_20260311_085632"
 
 
 @app.on_event("startup")
@@ -195,14 +197,11 @@ async def analyze_upload(video: UploadFile = File(...)):
 
 
 @app.post("/analyze/sample", response_model=AnalysisResponse, tags=["Analysis"])
-async def analyze_sample(request: Optional[SampleRequest] = None):
+async def analyze_sample():
     """
-    Analyze a preloaded sample video.
+    Analyze the preloaded sample video.
 
-    Processes one of the sample videos stored on the server.
-
-    Args:
-        request: Optional request with sample_name (defaults to "test_video")
+    Processes the sample video stored on the server.
 
     Returns:
         AnalysisResponse with speed results
@@ -216,32 +215,13 @@ async def analyze_sample(request: Optional[SampleRequest] = None):
     start_time = time.time()
 
     try:
-        # Get sample name
-        sample_name = "test_video"
-        if request and request.sample_name:
-            sample_name = request.sample_name
-
-        # Find sample video
-        video_path = SAMPLE_VIDEOS_DIR / f"{sample_name}.mp4"
-
-        if not video_path.exists():
-            # Try other extensions
-            for ext in [".avi", ".mov", ".MP4", ".AVI", ".MOV"]:
-                alt_path = SAMPLE_VIDEOS_DIR / f"{sample_name}{ext}"
-                if alt_path.exists():
-                    video_path = alt_path
-                    break
-
-        if not video_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Sample video '{sample_name}' not found in {SAMPLE_VIDEOS_DIR}"
-            )
+        # Use the hardcoded sample video
+        video_path = f"{SAMPLE_VIDEO_NAME}.mp4"
 
         logger.info(f"Processing sample video: {video_path}")
 
         # Process video
-        process_results = video_processor.process_video(str(video_path))
+        process_results = video_processor.process_video(video_path)
 
         if not process_results["successful"]:
             raise HTTPException(
@@ -265,7 +245,7 @@ async def analyze_sample(request: Optional[SampleRequest] = None):
             results=speed_results,
             metadata={
                 "fps": process_results["fps"],
-                "sample_name": sample_name,
+                "sample_name": SAMPLE_VIDEO_NAME,
             }
         )
 
@@ -282,20 +262,10 @@ async def list_samples():
     List available sample videos.
 
     Returns:
-        List of available sample video names
+        List with the single sample video name
     """
     try:
-        if not SAMPLE_VIDEOS_DIR.exists():
-            return {"samples": []}
-
-        samples = []
-        for ext in [".mp4", ".avi", ".mov", ".MP4", ".AVI", ".MOV"]:
-            for video_file in SAMPLE_VIDEOS_DIR.glob(f"*{ext}"):
-                sample_name = video_file.stem
-                if sample_name not in samples:
-                    samples.append(sample_name)
-
-        return {"samples": sorted(samples)}
+        return {"samples": [SAMPLE_VIDEO_NAME]}
 
     except Exception as e:
         logger.error(f"Error listing samples: {e}")
