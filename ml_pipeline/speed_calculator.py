@@ -157,17 +157,41 @@ def extract_line_segments(
                 best_segments = segments
 
     if not best_segments:
+        logger.debug("extract_line_segments: No segments found at all")
         return None, None, best_x
+
+    # Log what we found so we can diagnose filtering issues
+    logger.debug(f"extract_line_segments: best_x={best_x}, max_score={max_score}, "
+                 f"num_segments={len(best_segments)}")
+    logger.debug(f"extract_line_segments: segments (is_white, length): "
+                 f"{[(bool(s[0]), s[1]) for s in best_segments[:10]]}")
 
     # Find the first valid couple
     p_line, p_gap = None, None
     for i in range(len(best_segments) - 1):
+        is_white = best_segments[i][0]
+        w_len = best_segments[i][1]
+        g_len = best_segments[i + 1][1]
+        is_gap_dark = not best_segments[i + 1][0]
+
         # Use a safe range for lines (30px to 300px)
-        if best_segments[i][0] is True and 30 < best_segments[i][1] < 300:
-            if best_segments[i + 1][0] is False and 20 < best_segments[i + 1][1] < 400:
-                p_line = best_segments[i][1]
-                p_gap = best_segments[i + 1][1]
+        # NOTE: Must use == True, not 'is True', because segment values
+        # are numpy.bool_ which fails identity comparison with Python bool
+        if is_white == True and 30 < w_len < 300:
+            if is_gap_dark and 20 < g_len < 400:
+                p_line = w_len
+                p_gap = g_len
                 break
+            else:
+                logger.debug(f"extract_line_segments: white seg {w_len}px OK, "
+                             f"but next seg (dark={is_gap_dark}, len={g_len}) "
+                             f"failed gap filter (need 20 < gap < 400)")
+        elif is_white == True:
+            logger.debug(f"extract_line_segments: white seg {w_len}px "
+                         f"failed line filter (need 30 < line < 300)")
+
+    if p_line is None:
+        logger.debug("extract_line_segments: No valid line-gap pair found in segments")
 
     return p_line, p_gap, best_x
 

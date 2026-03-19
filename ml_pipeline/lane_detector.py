@@ -209,8 +209,8 @@ class LaneDetector:
 
             # Inference
             with torch.no_grad():
-                lane_mask = self.model(image_tensor)
-                lane_mask = lane_mask.squeeze().cpu().numpy()
+                raw_mask = self.model(image_tensor)
+                lane_mask = torch.sigmoid(raw_mask).squeeze().cpu().numpy()
 
             return lane_mask
 

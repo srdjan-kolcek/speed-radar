@@ -160,7 +160,7 @@ class SpeedEstimationPipeline:
                 logger.debug(f"Frame {self.frame_count}: Lane mask returned: {lane_mask is not None}")
 
                 if lane_mask is not None:
-                    lanes = extract_lane_polylines(lane_mask, threshold=0.58, min_points=3)
+                    lanes = extract_lane_polylines(lane_mask, threshold=0.55, min_points=3)
                     logger.debug(f"Frame {self.frame_count}: Lane mask shape: {lane_mask.shape}, min: {lane_mask.min():.4f}, max: {lane_mask.max():.4f}")
                     logger.debug(f"Frame {self.frame_count}: Lanes extracted: {len(lanes)}")
 
@@ -193,31 +193,13 @@ class SpeedEstimationPipeline:
         tracked_objects = self.tracker.update(detections)
         logger.debug(f"Frame {self.frame_count}: {len(tracked_objects)} vehicles tracked")
 
-        # 4. Save vehicle crops and update track info
-        for obj in tracked_objects:
-            x1, y1, x2, y2, track_id, class_id = obj
-            track_id = int(track_id)
-            
-            # Save crop
-            try:
-                crop = frame[int(y1):int(y2), int(x1):int(x2)]
-                if crop.size > 0:
-                    crop_path = self.crops_dir / f"vehicle_{track_id}.jpg"
-                    cv2.imwrite(str(crop_path), crop)
-                    self.track_crops[track_id] = str(crop_path.name)  # Store just filename
-                    
-                    # Store latest vehicle info
-                    self.track_vehicles[track_id] = [x1, y1, x2, y2, int(class_id)]
-                    self.track_frame_count[track_id] += 1
-            except Exception as e:
-                logger.warning(f"Could not save crop for track {track_id}: {e}")
-
-        # 5. Calculate speed
+        # 4. Calculate speed and save crops ONLY for vehicles with valid speed
         speeds = {}
         vehicles_with_speed = []
 
         for obj in tracked_objects:
             x1, y1, x2, y2, track_id, class_id = obj
+            track_id_int = int(track_id)
             cx, cy = (x1 + x2) / 2, y2  # Bottom-center for perspective
 
             current_speed = None
@@ -247,10 +229,29 @@ class SpeedEstimationPipeline:
                             self.track_speeds[track_id].append(speed_kmh_raw)
                             current_speed = float(np.mean(self.track_speeds[track_id]))
                             speeds[track_id] = current_speed
-                            logger.debug(f"Track {int(track_id)}: Valid speed = {current_speed:.1f} km/h")
-                        else:
-                            logger.debug(f"Track {int(track_id)}: Speed {speed_kmh_raw:.1f} km/h filtered out")
+                            logger.debug(f"Track {track_id_int}: Valid speed = {current_speed:.1f} km/h")
 
+                            # Save crop ONLY once speed is verified (matches notebook)
+                            if track_id_int not in self.track_crops:
+                                try:
+                                    pad = 10
+                                    c_x1 = max(0, int(x1) - pad)
+                                    c_y1 = max(0, int(y1) - pad)
+                                    c_x2 = min(w, int(x2) + pad)
+                                    c_y2 = min(h, int(y2) + pad)
+                                    crop = frame[c_y1:c_y2, c_x1:c_x2]
+                                    if crop.size > 0:
+                                        crop_path = self.crops_dir / f"vehicle_{track_id_int}.jpg"
+                                        cv2.imwrite(str(crop_path), crop)
+                                        self.track_crops[track_id_int] = str(crop_path.name)
+                                        self.track_vehicles[track_id_int] = [x1, y1, x2, y2, int(class_id)]
+                                except Exception as e:
+                                    logger.warning(f"Could not save crop for track {track_id_int}: {e}")
+                        else:
+                            logger.debug(f"Track {track_id_int}: Speed {speed_kmh_raw:.1f} km/h filtered out")
+
+            # Track frame count for all tracked vehicles
+            self.track_frame_count[track_id_int] += 1
             vehicles_with_speed.append((x1, y1, x2, y2, track_id, class_id, current_speed))
 
         self.frame_count += 1

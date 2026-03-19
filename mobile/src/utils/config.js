@@ -14,9 +14,9 @@ import { Platform } from 'react-native';
 // Find it: Windows cmd: ipconfig | grep "IPv4 Address"
 export const API_BASE_URL = __DEV__
   ? Platform.select({
-      android: 'http://192.168.0.28:8000',  // Works only on Android emulator
-      ios: 'http://192.168.0.28:8000',
-      default: 'http://192.168.0.28:8000',
+      android: 'http://10.16.52.193:8000',  // Works only on Android emulator
+      ios: 'http://10.16.52.193:8000',
+      default: 'http://10.16.52.193:8000',
     })
   : 'http://YOUR_SERVER_IP:8000'; // Replace with production server IP
 
@@ -26,7 +26,7 @@ export const ENDPOINTS = {
 };
 
 // Request timeout in milliseconds
-export const REQUEST_TIMEOUT = 60000; // 60 seconds
+export const REQUEST_TIMEOUT = 180000; // 180 seconds
 
 // Sample video name (must exist in backend sample_videos folder)
 export const DEFAULT_SAMPLE_NAME = 'VID_20260311_085632';

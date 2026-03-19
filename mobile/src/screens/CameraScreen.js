@@ -11,21 +11,27 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { colors, typography, spacing, borderRadius } from '../styles/theme';
 
 export const CameraScreen = ({ onRecordingComplete, onCancel }) => {
   const [permission, requestPermission] = useCameraPermissions();
+  const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const cameraRef = useRef(null);
   const timerRef = useRef(null);
 
   useEffect(() => {
-    // Request permissions on mount
-    if (!permission?.granted) {
-      requestPermission();
-    }
+    const getPermissions = async () => {
+      if (!permission?.granted) {
+        await requestPermission();
+      }
+      if (!microphonePermission?.granted) {
+        await requestMicrophonePermission();
+      }
+    };
+    getPermissions();
   }, []);
 
   useEffect(() => {
@@ -93,20 +99,37 @@ export const CameraScreen = ({ onRecordingComplete, onCancel }) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (!permission) {
+  if (!permission || !microphonePermission) {
     return (
       <View style={styles.container}>
-        <Text style={styles.permissionText}>Requesting camera permissions...</Text>
+        <Text style={styles.permissionText}>
+          Camera and Microphone permissions are required to record videos.
+        </Text>
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={async () => {
+            await requestPermission();
+            await requestMicrophonePermission();
+          }}
+        >
+          <Text style={styles.permissionButtonText}>Grant Permissions</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  if (!permission.granted) {
+  if (!permission.granted || !microphonePermission.granted) {
     return (
       <View style={styles.container}>
-        <Text style={styles.permissionText}>Camera permission is required to record videos.</Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
+        <Text style={styles.permissionText}>Camera and Microphone permissions are required to record videos.</Text>
+        <TouchableOpacity style={styles.permissionButton} onPress={async () => {
+          await requestPermission();
+          await requestMicrophonePermission();
+        }}>
+          <Text style={styles.permissionButtonText}>Grant Permissions</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
           <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -118,45 +141,44 @@ export const CameraScreen = ({ onRecordingComplete, onCancel }) => {
   return (
     <View style={styles.container}>
       <CameraView
-        style={styles.camera}
+        style={StyleSheet.absoluteFill}
         ref={cameraRef}
         mode="video"
         facing="back"
-      >
-        <View style={styles.overlay}>
-          <View style={styles.topBar}>
-            {!isRecording && (
-              <TouchableOpacity style={styles.closeButton} onPress={onCancel}>
-                <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-            )}
-            {isRecording && (
-              <View style={styles.recordingIndicator}>
-                <View style={styles.recordingDot} />
-                <Text style={styles.recordingTime}>{formatTime(recordingTime)}</Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.bottomBar}>
-            {!isRecording ? (
-              <TouchableOpacity
-                style={styles.recordButton}
-                onPress={startRecording}
-              >
-                <View style={styles.recordButtonInner} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.stopButton}
-                onPress={stopRecording}
-              >
-                <View style={styles.stopButtonInner} />
-              </TouchableOpacity>
-            )}
-          </View>
+      />
+      <View style={styles.overlay}>
+        <View style={styles.topBar}>
+          {!isRecording && (
+            <TouchableOpacity style={styles.closeButton} onPress={onCancel}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+          )}
+          {isRecording && (
+            <View style={styles.recordingIndicator}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingTime}>{formatTime(recordingTime)}</Text>
+            </View>
+          )}
         </View>
-      </CameraView>
+
+        <View style={styles.bottomBar}>
+          {!isRecording ? (
+            <TouchableOpacity
+              style={styles.recordButton}
+              onPress={startRecording}
+            >
+              <View style={styles.recordButtonInner} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.stopButton}
+              onPress={stopRecording}
+            >
+              <View style={styles.stopButtonInner} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
     </View>
   );
 };
