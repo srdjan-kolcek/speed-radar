@@ -13,6 +13,7 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import (
     ALLOWED_ORIGINS,
@@ -22,16 +23,20 @@ from .config import (
     LANE_MODEL_PATH,
     MAX_VIDEO_SIZE_MB,
     VEHICLE_MODEL_PATH,
+    OUTPUT_DIR,
 )
 from .models import AnalysisResponse, HealthResponse, SampleRequest, SpeedResult
 from .video_processor import VideoProcessor
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Set ml_pipeline to DEBUG
+logging.getLogger("ml_pipeline").setLevel(logging.DEBUG)
 
 # Create FastAPI app
 app = FastAPI(
@@ -48,6 +53,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount vehicle crops directory as static files
+crops_dir = OUTPUT_DIR / "vehicle_crops"
+crops_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/vehicle_crops", StaticFiles(directory=str(crops_dir)), name="vehicle_crops")
 
 # Global video processor instance
 video_processor: Optional[VideoProcessor] = None

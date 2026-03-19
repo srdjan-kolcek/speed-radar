@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from ml_pipeline import (
     VehicleDetector,
     LaneDetector,
-    VehicleTracker,
-    SpeedCalculator,
+    SimpleTracker,
+    SpeedEstimationPipeline,
     get_homography,
     extract_line_segments,
     calculate_meters_per_pixel,
@@ -40,6 +40,7 @@ from .config import (
     MAX_VALID_SPEED_KMH,
     VEHICLE_MODEL_PATH,
     FALLBACK_VEHICLE_MODEL,
+    OUTPUT_DIR,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,15 +81,17 @@ class VideoProcessor:
         """
         return (
             self.vehicle_detector is not None
-            and self.vehicle_detector.is_loaded()
+            and self.vehicle_detector.model is not None
+            and self.lane_detector is not None
         )
 
-    def process_video(self, video_path: str) -> Dict:
+    def process_video(self, video_path: str, output_dir: str = None) -> Dict:
         """
         Process a video file and return speed estimations.
 
         Args:
             video_path: Path to video file
+            output_dir: Directory to save vehicle crops and reports (defaults to OUTPUT_DIR from config)
 
         Returns:
             Dictionary with:
@@ -100,6 +103,9 @@ class VideoProcessor:
                 "error": str (optional)
             }
         """
+        if output_dir is None:
+            output_dir = str(OUTPUT_DIR)
+            
         try:
             # Open video
             cap = cv2.VideoCapture(str(video_path))
@@ -116,28 +122,21 @@ class VideoProcessor:
             logger.info(f"Processing video: {video_path}")
             logger.info(f"FPS: {fps}, Total frames: {total_frames}")
 
-            # Initialize tracking and speed calculation
-            tracker = VehicleTracker(
-                iou_threshold=TRACKER_IOU_THRESHOLD,
-                max_age=TRACKER_MAX_AGE,
-            )
-
-            speed_calculator = SpeedCalculator(
-                tripwire_y1=TRIPWIRE_Y1,
-                tripwire_y2=TRIPWIRE_Y2,
+            # Initialize speed estimation pipeline with output directory
+            pipeline = SpeedEstimationPipeline(
+                vehicle_detector=self.vehicle_detector,
+                lane_detector=self.lane_detector,
                 fps=fps,
-                min_valid_speed=MIN_VALID_SPEED_KMH,
-                max_valid_speed=MAX_VALID_SPEED_KMH,
+                iou_threshold=TRACKER_IOU_THRESHOLD,
+                max_track_age=TRACKER_MAX_AGE,
+                output_dir=output_dir,
             )
 
             # State variables
-            homography_matrix = None
-            meters_per_pixel = None
             frame_count = 0
-
-            # Aggregated results
             all_speeds = {}  # {track_id: [speeds]}
             vehicle_classes = {}  # {track_id: class_id}
+            vehicle_crops = {}  # {track_id: crop_filename}
 
             # Process frames
             while cap.isOpened():
@@ -147,58 +146,25 @@ class VideoProcessor:
 
                 frame_count += 1
 
-                # Convert BGR to RGB
+                # Convert BGR to RGB for processing
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                # Step 1: Detect vehicles
-                detections = self.vehicle_detector.detect(frame_rgb)
+                # Process frame through pipeline
+                results = pipeline.process_frame(frame_rgb)
 
-                # Step 2: Track vehicles
-                tracked_objects = tracker.update(detections)
+                # Extract speeds and vehicle info
+                for vehicle in results['vehicles']:
+                    x1, y1, x2, y2, track_id, class_id, speed = vehicle
+                    track_id = int(track_id)
 
-                # Store vehicle classes
-                for obj in tracked_objects:
-                    track_id = int(obj[4])
-                    class_id = int(obj[5])
-                    vehicle_classes[track_id] = class_id
+                    # Store vehicle class
+                    vehicle_classes[track_id] = int(class_id)
 
-                # Step 3: Detect lanes (every 10 frames to save computation)
-                if frame_count % 10 == 0 or homography_matrix is None:
-                    lane_mask = self.lane_detector.detect(frame_rgb)
-
-                    if lane_mask is not None:
-                        # Calculate homography and scale
-                        try:
-                            pil_image = Image.fromarray(frame_rgb)
-                            warped, M = get_homography(pil_image, lane_mask)
-
-                            if warped is not None and M is not None:
-                                homography_matrix = M
-
-                                # Extract line segments
-                                p_line, p_gap, _ = extract_line_segments(warped)
-
-                                # Calculate scale
-                                new_mpp = calculate_meters_per_pixel(p_line, p_gap)
-                                if new_mpp is not None:
-                                    meters_per_pixel = new_mpp
-
-                        except Exception as e:
-                            logger.debug(f"Homography calculation failed: {e}")
-
-                # Step 4: Calculate speeds
-                speeds = speed_calculator.update(
-                    tracked_objects,
-                    homography_matrix,
-                    meters_per_pixel,
-                )
-
-                # Aggregate speeds per track
-                for track_id, speed in speeds.items():
-                    if track_id not in all_speeds:
-                        all_speeds[track_id] = []
-
-                    all_speeds[track_id].append(speed)
+                    # Aggregate speeds if available
+                    if speed is not None:
+                        if track_id not in all_speeds:
+                            all_speeds[track_id] = []
+                        all_speeds[track_id].append(speed)
 
                 # Log progress
                 if frame_count % 100 == 0:
@@ -206,8 +172,12 @@ class VideoProcessor:
 
             cap.release()
 
-            # Calculate final results
-            results = self._aggregate_results(all_speeds, vehicle_classes)
+            # Save crops and report from pipeline
+            vehicle_crops = pipeline.track_crops.copy()
+            pipeline.save_report()
+
+            # Calculate final results with crop information
+            results = self._aggregate_results(all_speeds, vehicle_classes, vehicle_crops)
 
             logger.info(f"Processing complete. Total frames: {frame_count}")
             logger.info(f"Vehicles tracked: {len(results)}")
@@ -233,6 +203,7 @@ class VideoProcessor:
         self,
         all_speeds: Dict[int, List[float]],
         vehicle_classes: Dict[int, int],
+        vehicle_crops: Dict[int, str] = None,
     ) -> List[Dict]:
         """
         Aggregate multiple speed measurements per vehicle.
@@ -240,10 +211,14 @@ class VideoProcessor:
         Args:
             all_speeds: Dictionary of {track_id: [speeds]}
             vehicle_classes: Dictionary of {track_id: class_id}
+            vehicle_crops: Dictionary of {track_id: crop_filename}
 
         Returns:
             List of speed result dictionaries
         """
+        if vehicle_crops is None:
+            vehicle_crops = {}
+
         results = []
         class_names = {0: "car", 1: "truck", 2: "bus"}
 
@@ -253,6 +228,7 @@ class VideoProcessor:
 
             # Calculate average speed
             avg_speed = np.mean(speeds)
+            max_speed = np.max(speeds)
 
             # Calculate confidence based on consistency
             if len(speeds) > 1:
@@ -266,11 +242,16 @@ class VideoProcessor:
             class_id = vehicle_classes.get(track_id, 0)
             vehicle_type = class_names.get(class_id, "vehicle")
 
+            # Get crop filename
+            image_filename = vehicle_crops.get(track_id, None)
+
             results.append({
                 "track_id": int(track_id),
                 "speed_kmh": float(avg_speed),
+                "max_speed_kmh": float(max_speed),
                 "confidence": float(confidence),
                 "vehicle_type": vehicle_type,
+                "image_filename": image_filename,
             })
 
         # Sort by track_id

@@ -9,9 +9,12 @@ from typing import List, Optional
 class SpeedResult(BaseModel):
     """Individual speed measurement for a tracked vehicle."""
     track_id: int = Field(..., description="Unique tracking ID for the vehicle")
-    speed_kmh: float = Field(..., description="Estimated speed in km/h")
+    speed_kmh: float = Field(..., description="Estimated average speed in km/h")
+    max_speed_kmh: Optional[float] = Field(None, description="Maximum estimated speed in km/h")
     confidence: float = Field(..., description="Confidence score (0.0-1.0)")
     vehicle_type: Optional[str] = Field(None, description="Type of vehicle (car/truck/bus)")
+    image_filename: Optional[str] = Field(None, description="Filename of vehicle crop image in vehicle_crops/")
+
 
 
 class AnalysisResponse(BaseModel):
@@ -27,7 +30,7 @@ class AnalysisResponse(BaseModel):
 class SampleRequest(BaseModel):
     """Request model for sample video analysis."""
     sample_name: Optional[str] = Field(
-        "test_video",
+        "VID_20260311_085632",
         description="Name of the sample video to process (without extension)"
     )
 

@@ -8,6 +8,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 MODELS_DIR = BASE_DIR / "models" / "weights"
 UPLOADS_DIR = BASE_DIR / "backend" / "uploads"
+OUTPUT_DIR = BASE_DIR / "backend" / "analysis_output"  # For vehicle crops and reports
 # SAMPLE_VIDEOS_DIR = BASE_DIR / "sample_videos"
 
 # Model paths
