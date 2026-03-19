@@ -175,7 +175,10 @@ export const HomeScreen = () => {
                     key={`${result.track_id}-${index}`}
                     trackId={result.track_id}
                     speedKmh={result.speed_kmh}
+                    maxSpeedKmh={result.max_speed_kmh}
                     confidence={result.confidence}
+                    vehicleType={result.vehicle_type}
+                    imageFilename={result.image_filename}
                   />
                 ))}
               </>

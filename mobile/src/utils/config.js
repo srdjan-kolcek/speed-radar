@@ -10,11 +10,13 @@
 import { Platform } from 'react-native';
 
 // Determine the API base URL based on environment and platform
+// FOR PHYSICAL DEVICE: Replace YOUR_LOCAL_IP with your computer's IP (e.g., 192.168.1.5)
+// Find it: Windows cmd: ipconfig | grep "IPv4 Address"
 export const API_BASE_URL = __DEV__
   ? Platform.select({
-      android: 'http://10.0.2.2:8000',
-      ios: 'http://localhost:8000',
-      default: 'http://localhost:8000',
+      android: 'http://192.168.0.28:8000',  // Works only on Android emulator
+      ios: 'http://192.168.0.28:8000',
+      default: 'http://192.168.0.28:8000',
     })
   : 'http://YOUR_SERVER_IP:8000'; // Replace with production server IP
 
@@ -27,4 +29,4 @@ export const ENDPOINTS = {
 export const REQUEST_TIMEOUT = 60000; // 60 seconds
 
 // Sample video name (must exist in backend sample_videos folder)
-export const DEFAULT_SAMPLE_NAME = 'test_video';
+export const DEFAULT_SAMPLE_NAME = 'VID_20260311_085632';
