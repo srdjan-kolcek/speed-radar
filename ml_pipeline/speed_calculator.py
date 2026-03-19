@@ -177,7 +177,7 @@ def extract_line_segments(
         # Use a safe range for lines (30px to 300px)
         # NOTE: Must use == True, not 'is True', because segment values
         # are numpy.bool_ which fails identity comparison with Python bool
-        if is_white == True and 30 < w_len < 300:
+        if is_white == True and 10 < w_len < 100:
             if is_gap_dark and 20 < g_len < 400:
                 p_line = w_len
                 p_gap = g_len
@@ -188,7 +188,7 @@ def extract_line_segments(
                              f"failed gap filter (need 20 < gap < 400)")
         elif is_white == True:
             logger.debug(f"extract_line_segments: white seg {w_len}px "
-                         f"failed line filter (need 30 < line < 300)")
+                         f"failed line filter (need 10 < line < 100)")
 
     if p_line is None:
         logger.debug("extract_line_segments: No valid line-gap pair found in segments")
@@ -226,10 +226,10 @@ def calculate_meters_per_pixel(
     # If the line is a lot bigger than the gap, we say it's 3m line and 1m gap
     if ratio >= 2.0:
         road_type = "City road (3m line, 1m gap)"
-        meters_per_pixel = 3.0 / p_line
+        meters_per_pixel = 3.2 / p_line
     else:
         road_type = "Open road (3m line, 3m gap)"
-        meters_per_pixel = 3.0 / p_line
+        meters_per_pixel = 3.2 / p_line
 
     # Safety check
     if meters_per_pixel > 0.5:

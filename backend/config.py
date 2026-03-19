@@ -28,9 +28,9 @@ TRIPWIRE_Y2 = 600  # Second tripwire y-position (bird's-eye view)
 DEFAULT_FPS = 30   # Default frames per second
 
 # Detection parameters
-MIN_CONFIDENCE = 0.25  # Minimum confidence for vehicle detection
+MIN_CONFIDENCE = 0.8  # Minimum confidence for vehicle detection
 IOU_THRESHOLD = 0.45   # IoU threshold for NMS
-TRACKER_IOU_THRESHOLD = 0.3  # IoU threshold for tracking
+TRACKER_IOU_THRESHOLD = 0.2  # IoU threshold for tracking
 TRACKER_MAX_AGE = 30   # Maximum frames to keep lost track
 
 # Speed validation

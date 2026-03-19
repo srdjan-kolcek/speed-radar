@@ -89,7 +89,7 @@ class SpeedEstimationPipeline:
         vehicle_detector: VehicleDetector,
         lane_detector: Optional[LaneDetector],
         fps: float = 30.0,
-        iou_threshold: float = 0.3,
+        iou_threshold: float = 0.2,
         max_track_age: int = 30,
         output_dir: str = ".",
     ):
@@ -225,7 +225,7 @@ class SpeedEstimationPipeline:
                         speed_kmh_raw = (meters / dt) * 3.6
 
                         # Filter outliers
-                        if 5 < speed_kmh_raw < 220:
+                        if 10 < speed_kmh_raw < 220:
                             self.track_speeds[track_id].append(speed_kmh_raw)
                             current_speed = float(np.mean(self.track_speeds[track_id]))
                             speeds[track_id] = current_speed

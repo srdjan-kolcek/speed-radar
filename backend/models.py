@@ -31,6 +31,7 @@ class SampleRequest(BaseModel):
     """Request model for sample video analysis."""
     sample_name: Optional[str] = Field(
         "VID_20260311_085632",
+        # "VID_20260319_182328",
         description="Name of the sample video to process (without extension)"
     )
 
