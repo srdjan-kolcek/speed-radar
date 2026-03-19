@@ -34,7 +34,7 @@ class SimpleLaneDetector(nn.Module):
         super(SimpleLaneDetector, self).__init__()
 
         # Use ResNet18 as backbone
-        resnet = models.resnet18(pretrained=False)
+        resnet = models.resnet18(weights=None)
 
         # Encoder (ResNet backbone)
         self.layer0 = nn.Sequential(
@@ -55,12 +55,14 @@ class SimpleLaneDetector(nn.Module):
         self.up3 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
         self.dec3 = self._make_decoder_block(128, 64)
 
-        self.up4 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
-        self.dec4 = self._make_decoder_block(64, 32)
+        self.up4 = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)
+        self.dec4 = self._make_decoder_block(128, 64)
 
         # Final convolution
         self.final = nn.Sequential(
-            nn.Conv2d(32, num_classes, kernel_size=1), nn.Sigmoid()
+            nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2),
+            nn.Conv2d(32, num_classes, kernel_size=1),
+            nn.Sigmoid()
         )
 
     def _make_decoder_block(self, in_channels: int, out_channels: int) -> nn.Module:
@@ -84,39 +86,52 @@ class SimpleLaneDetector(nn.Module):
         Returns:
             Output segmentation mask (B, num_classes, H, W)
         """
+        # Save input size for final resize
+        input_size = x.shape[2:]
+        
         # Encoder
-        x0 = self.layer0(x)
-        x1 = self.layer1(x0)
-        x2 = self.layer2(x1)
-        x3 = self.layer3(x2)
-        x4 = self.layer4(x3)
+        x0 = self.layer0(x)  # 1/4 size, 64 channels
+        x1 = self.layer1(x0)  # 1/4 size, 64 channels
+        x2 = self.layer2(x1)  # 1/8 size, 128 channels
+        x3 = self.layer3(x2)  # 1/16 size, 256 channels
+        x4 = self.layer4(x3)  # 1/32 size, 512 channels
 
         # Decoder with skip connections
-        up1 = self.up1(x4)
+        up1 = self.up1(x4)  # 1/16 size
+        # Match sizes for concatenation
+        up1 = self._match_size(up1, x3)
         cat1 = torch.cat([up1, x3], dim=1)
         dec1 = self.dec1(cat1)
-
-        up2 = self.up2(dec1)
+        
+        up2 = self.up2(dec1)  # 1/8 size
+        up2 = self._match_size(up2, x2)
         cat2 = torch.cat([up2, x2], dim=1)
         dec2 = self.dec2(cat2)
-
-        up3 = self.up3(dec2)
+        
+        up3 = self.up3(dec2)  # 1/4 size
+        up3 = self._match_size(up3, x1)
         cat3 = torch.cat([up3, x1], dim=1)
         dec3 = self.dec3(cat3)
-
-        up4 = self.up4(dec3)
+        
+        up4 = self.up4(dec3)  # 1/2 size
+        up4 = self._match_size(up4, x0)
         cat4 = torch.cat([up4, x0], dim=1)
         dec4 = self.dec4(cat4)
-
-        # Final output
+        
+        # Output - upsample to original size
         out = self.final(dec4)
-
-        # Upsample to original size
-        out = nn.functional.interpolate(
-            out, scale_factor=4, mode="bilinear", align_corners=False
-        )
-
+        
+        # Ensure output matches input size exactly
+        if out.shape[2:] != input_size:
+            out = nn.functional.interpolate(out, size=input_size, mode='bilinear', align_corners=False)
+        
         return out
+    
+    def _match_size(self, x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """Match spatial dimensions of x to target using interpolation"""
+        if x.shape[2:] != target.shape[2:]:
+            x = nn.functional.interpolate(x, size=target.shape[2:], mode='bilinear', align_corners=False)
+        return x
 
 
 class LaneDetector:

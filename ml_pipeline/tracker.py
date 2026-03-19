@@ -1,7 +1,7 @@
 """
 Vehicle Tracking Module - Simple IoU-Based Tracker
 
-Extracted from 04_speed_estimation.ipynb
+Extracted from notebook: 04_speed_estimation.ipynb
 """
 
 import logging
@@ -37,10 +37,9 @@ def calculate_iou(box1: List[float], box2: List[float]) -> float:
     return inter_area / union_area if union_area > 0 else 0.0
 
 
-class VehicleTracker:
+class SimpleTracker:
     """
     Simple IoU-based tracker for vehicles.
-
     Tracks vehicles across frames using Intersection over Union (IoU) matching.
     This is a lightweight alternative to more complex trackers like ByteTrack.
     """
@@ -138,7 +137,6 @@ class VehicleTracker:
     def get_active_tracks(self) -> dict:
         """
         Get currently active tracks.
-
         Returns:
             Dictionary of {track_id: track_data}
         """
@@ -147,3 +145,7 @@ class VehicleTracker:
     def get_track_count(self) -> int:
         """Get number of active tracks."""
         return len(self.tracks)
+
+
+# For backward compatibility
+VehicleTracker = SimpleTracker
